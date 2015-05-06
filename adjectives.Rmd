@@ -101,7 +101,7 @@ print(p)
 #   probability=c(x,
 #                 sapply(dists, function(dist) {return(dist[[2]])}))
 # )
-# write.table(dist_data, sep=",", row.names=F, col.names=F, file="priors.csv")
+# write.table(dist_data, sep=",", row.names=F, col.names=F, file="data/input/toy_priors.csv")
 ```
 
 ## Real priors from Anthea's experiments
@@ -169,14 +169,14 @@ marginalize = function(df) {
   return(new_df)
 }
 webppl_output = rbind(
-  read.table("output/normal.csv", sep=",", header=T)
-  , read.table("output/uniform.csv", sep=",", header=T)
-  , read.table("output/beta1_5.csv", sep=",", header=T)
-  , read.table("output/beta5_1.csv", sep=",", header=T)
-  , read.table("output/lognormal1-x_-1_0.3.csv", sep=",", header=T)
-  , read.table("output/lognormal-1_0.3.csv", sep=",", header=T)
-  , read.table("output/2x.csv", sep=",", header=T)
-  , read.table("output/2-2x.csv", sep=",", header=T)
+  read.table("data/output/toy_priors/normal.csv", sep=",", header=T)
+  , read.table("data/output/toy_priors/uniform.csv", sep=",", header=T)
+  , read.table("data/output/toy_priors/beta1_5.csv", sep=",", header=T)
+  , read.table("data/output/toy_priors/beta5_1.csv", sep=",", header=T)
+  , read.table("data/output/toy_priors/lognormal1-x_-1_0.3.csv", sep=",", header=T)
+  , read.table("data/output/toy_priors/lognormal-1_0.3.csv", sep=",", header=T)
+  , read.table("data/output/toy_priors/2x.csv", sep=",", header=T)
+  , read.table("data/output/toy_priors/2-2x.csv", sep=",", header=T)
 )
 webppl_output$prior_distribution = factor(webppl_output$prior_distribution,
                                             levels=c(
