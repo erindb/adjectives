@@ -11,6 +11,26 @@ output:
 # install dependencies
 library(ggplot2, quiet=T)
 library(plyr, quiet=T)
+
+marginalize = function(df) {
+  value_df = ddply(df,
+             .(alternatives, prior_distribution, cost_of_adjective,
+               utterance, speaker_lambda, value),
+             summarize,
+             probability = sum(probability))
+  theta_df = ddply(df,
+             .(alternatives, prior_distribution, cost_of_adjective,
+               utterance, speaker_lambda, theta),
+             summarize,
+             probability = sum(probability))
+  value_df$variable = "value"
+  theta_df$variable = "theta"
+  names(theta_df)[names(theta_df) == "theta"] = "value"
+  value_df$variable = factor(value_df$variable, levels=c("value", "theta"))
+  theta_df$variable = factor(theta_df$variable, levels=c("value", "theta"))
+  new_df = rbind(value_df, theta_df)
+  return(new_df)
+}
 ```
 
 # Math
@@ -106,7 +126,21 @@ print(p)
 
 ## Real priors from Anthea's experiments
 
-```{r, echo=F}
+```{r, echo=F, fig.width=8.5, fig.height=6}
+anthea_humans_wide = read.table("data/input/sliderMeans3.csv", header=T, sep=",")
+anthea_humans = reshape(anthea_humans_wide, direction="long", varying=4:18, sep="", timevar="bin")
+p = ggplot(subset(anthea_humans, condition != "few"), aes(x=bin, y=sliderNorm, colour=condition)) +
+  geom_line() +
+  facet_wrap(~ item, scale="free") +
+  ggtitle("Anthea's Priors and Posteriors (after 'Many') for Various Contexts") +
+  theme_bw(10) +
+  theme(panel.grid=element_blank())
+print(p)
+
+# ## to print prior distributions for webppl input:
+# dist_data = anthea_humans[anthea_humans$condition == "none", c("item", "sliderNorm")]
+# dist_data = rbind(dist_data, data.frame(item=rep("x", 15), sliderNorm=1:15))
+# write.table(dist_data, sep=",", row.names=F, col.names=F, file="data/input/anthea_priors.csv")
 ```
 
 # Simulations
@@ -149,25 +183,7 @@ var listener = function(utterance) {
 #### Posteriors
 
 ```{r, echo=F, fig.width=8.5, fig.height=4}
-marginalize = function(df) {
-  value_df = ddply(df,
-             .(alternatives, prior_distribution, cost_of_adjective,
-               utterance, speaker_lambda, value),
-             summarize,
-             probability = sum(probability))
-  theta_df = ddply(df,
-             .(alternatives, prior_distribution, cost_of_adjective,
-               utterance, speaker_lambda, theta),
-             summarize,
-             probability = sum(probability))
-  value_df$variable = "value"
-  theta_df$variable = "theta"
-  names(theta_df)[names(theta_df) == "theta"] = "value"
-  value_df$variable = factor(value_df$variable, levels=c("value", "theta"))
-  theta_df$variable = factor(theta_df$variable, levels=c("value", "theta"))
-  new_df = rbind(value_df, theta_df)
-  return(new_df)
-}
+### need to modify this
 webppl_output = rbind(
   read.table("data/output/toy_priors/normal.csv", sep=",", header=T)
   , read.table("data/output/toy_priors/uniform.csv", sep=",", header=T)
@@ -226,14 +242,14 @@ Expected thresholds $\theta$ for different distributions as both values and perc
 ```{r, echo=FALSE, fig.width=7, fig.height=3}
 
 expected_thetas = ddply(subset(theta_output, variable == "theta" &
-                                 cost_of_adjective == 6 &
-                                 speaker_lambda == 5),
+                                 cost_of_adjective == 1 &
+                                 speaker_lambda == 1),
                         .(prior_distribution),
                         summarize,
                         expected = sum( value * probability)) #get mode later
 actual_priors = subset(marginalized_output, utterance == "prior" &
-                  cost_of_adjective == 6 &
-                  speaker_lambda == 5 &
+                  cost_of_adjective == 1 &
+                  speaker_lambda == 1 &
                   variable == "value")
 actual_priors = actual_priors[,c("prior_distribution", "value", "probability")]
 expected_thetas$percentile = sapply(1:nrow(expected_thetas), function(i) {
@@ -252,3 +268,115 @@ These values are not all the same.
 * I might want to fit the parameters to the adjective posterior, but first we can try alpha5 cost6.
 * Graph model posterior against human posterior.
 * Get expected thetas and compare to Anthea's exptected thetas.
+
+Here's the output of our lifted variable model compared to Anthea's data for "many".
+
+```{r, echo=F, fig.width=8.5, fig.height=7}
+files <- dir("data/output/anthea_priors/", pattern="*.csv")
+webppl_anthea_output = data.frame()
+for (file in files) {
+  webppl_anthea_output = rbind(
+    webppl_anthea_output,
+    read.table(paste("data/output/anthea_priors/", file, sep=""), sep=",", header=T)
+  )
+}
+marginalized_anthea_output = marginalize(webppl_anthea_output)
+anthea_humans$prior_distribution = anthea_humans$item
+
+model = subset(marginalized_anthea_output, !(prior_distribution %in% c(
+#   "cig", "move"
+  )))
+human = subset(anthea_humans, !(prior_distribution %in% c(
+#   "cig", "move"
+  )))
+
+p = ggplot(data=subset(model, utterance == "adjective" & variable == "value"),
+           aes(x=value, y=probability)) +
+  geom_line(aes(colour=ordered(cost_of_adjective), linetype=ordered(speaker_lambda))) +
+  geom_line(data=subset(human, condition == "many"), aes(x=bin, y=sliderNorm), colour="black") +
+  facet_wrap(~ prior_distribution, scale="free") +
+  ggtitle("Posterior distributions for humans versus model with various parameter values") +
+  theme_bw(10) +
+  theme(panel.grid=element_blank())
+print(p)
+```
+
+```{r, echo=F}
+### for each prior distribution and parameter combo, get a KLD
+model_klds = ddply(.data=subset(model, utterance == "adjective" & variable == "value"), .(speaker_lambda, cost_of_adjective, prior_distribution), .fun=function(df) {
+  human_subd = subset(human, prior_distribution == df$prior_distribution[[1]] & condition == "many")
+  kld = sum( df$probability * log(df$probability / human_subd$sliderNorm) )
+  newdf = df[1,]
+  newdf$kld = kld
+  newdf$value = NULL
+  newdf$probability = NULL
+  return(newdf)
+})
+
+### for each parameter combo, get average KLD across distributions
+average_klds = ddply(.data=model_klds, .(speaker_lambda, cost_of_adjective), summarize, kld = mean(kld))
+best_parameters = average_klds[average_klds$kld == min(average_klds$kld),]
+
+best_speaker_lambda=best_parameters$speaker_lambda[[1]]
+best_cost_of_adjective=best_parameters$cost_of_adjective[[1]]
+```
+
+The best fit parameters (i.e. with the lowest average KL divergence) are speaker rationality $\lambda =$ `r best_speaker_lambda` and cost of utterance `r best_cost_of_adjective`.
+
+```{r, echo=F, fig.width=8.5, fig.height=7}
+model_vs_human = subset(model, utterance == "adjective" & variable == "value" &
+                         cost_of_adjective == best_cost_of_adjective &
+                         speaker_lambda == best_speaker_lambda)[, c("prior_distribution", "value", "probability")]
+model_vs_human$model_or_human = "model"
+human_posterior = subset(human, condition == "many")
+model_vs_human = rbind(model_vs_human, data.frame(
+  prior_distribution = human_posterior$item,
+  value = human_posterior$bin,
+  probability = human_posterior$sliderNorm,
+  model_or_human = rep("human", nrow(human_posterior))
+))
+
+model_vs_human$model_or_human = factor(model_vs_human$model_or_human,
+                                       levels=c("model", "human"))
+p = ggplot(data=model_vs_human, aes(x = value, y= probability, colour=prior_distribution, linetype=model_or_human)) +
+  geom_line() +
+  facet_wrap(~ prior_distribution, scale="free") +
+  ggtitle("Posterior distributions for humans versus model with best parameter values") +
+  theme_bw(10) +
+  theme(panel.grid=element_blank())
+print(p)
+```
+
+```{r, echo=F}
+expected_thetas = ddply(subset(model, utterance == "adjective" & variable == "theta" &
+                         cost_of_adjective == best_cost_of_adjective &
+                         speaker_lambda == best_speaker_lambda),
+                        .(prior_distribution),
+                        summarize,
+                        expected = sum( value * probability)) #get mode later
+actual_priors = subset(marginalized_anthea_output, utterance == "prior" &
+                  cost_of_adjective == 1 &
+                  speaker_lambda == 1 &
+                  variable == "value")
+actual_priors = actual_priors[,c("prior_distribution", "value", "probability")]
+expected_thetas$percentile = sapply(1:nrow(expected_thetas), function(i) {
+  prior_dist = as.character(expected_thetas$prior_distribution)[[i]]
+  expected = expected_thetas$expected[[i]]
+  subd = subset(actual_priors, prior_distribution == prior_dist & value <= expected)
+  return(sum(subd$probability))
+})
+
+best_KLs = subset(model_klds, cost_of_adjective==best_cost_of_adjective & speaker_lambda == best_speaker_lambda)
+stopifnot(best_KLs$prior_distribution == expected_thetas$prior_distribution)
+expected_thetas$KL = best_KLs$kld
+print(expected_thetas)
+
+### percentiles that are more different don't correspond to higher KLs.
+### (if they did, that might be evidence for a single theta value)
+# ggplot(data=expected_thetas, aes(x=KL, y=percentile)) +
+#   geom_point() +
+#   geom_smooth(method="lm") +
+#   xlab("KL divergence between Model and Empirical 'Many' Posterior") +
+#   ylab("Model's Expected Theta as a Percentile of Empirical Prior")
+# with(expected_thetas, cor.test(KL, percentile))
+```

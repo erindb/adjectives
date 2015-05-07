@@ -17,7 +17,10 @@
 // rationality parameter lambda
 // softmax?
 
-var priors = simpleCSV.readCSV("data/input/toy_priors.csv");
+var version = "anthea";
+//var version = "toy";
+
+var priors = simpleCSV.readCSV("data/input/" + version + "_priors.csv");
 
 var get_prior_values = function(value_type) {
 	return map(
@@ -28,16 +31,32 @@ var get_prior_values = function(value_type) {
 
 var values = get_prior_values("x");
 
-var probabilities = {
-	"normal": get_prior_values("normal"),
-	"uniform": get_prior_values("uniform"),
-	"beta5_1": get_prior_values("beta(5, 1)"),
-	"beta1_5": get_prior_values("beta(1, 5)"),
-	"lognormal-1_0.3": get_prior_values("lognormal(-1, 0.3)"),
-	"lognormal1-x_-1_0.3": get_prior_values("lognormal(1-x, -1, 0.3)"),
-	"2-2x": get_prior_values("2-2x"),
-	"2x": get_prior_values("2x")
-}
+var probabilities = version == "toy" ? {
+		"normal": get_prior_values("normal"),
+		"uniform": get_prior_values("uniform"),
+		"beta5_1": get_prior_values("beta(5, 1)"),
+		"beta1_5": get_prior_values("beta(1, 5)"),
+		"lognormal-1_0.3": get_prior_values("lognormal(-1, 0.3)"),
+		"lognormal1-x_-1_0.3": get_prior_values("lognormal(1-x, -1, 0.3)"),
+		"2-2x": get_prior_values("2-2x"),
+		"2x": get_prior_values("2x")
+	} : {
+		"bas": get_prior_values("bas"),
+		"book": get_prior_values("book"),
+		"bur": get_prior_values("bur"),
+		"cig": get_prior_values("cig"),
+		"eat": get_prior_values("eat"),
+		"edu": get_prior_values("edu"),
+		"girl": get_prior_values("girl"),
+		"hair": get_prior_values("hair"),
+		"kid": get_prior_values("kid"),
+		"mov": get_prior_values("mov"),
+		"move": get_prior_values("move"),
+		"poem": get_prior_values("poem"),
+		"shoe": get_prior_values("shoe"),
+		"trav": get_prior_values("trav"),
+		"tv": get_prior_values("tv")
+	};
 
 var utterances = {
 	"pos_neg_null_exact": ["adjective", "", "~adjective", "exact"],
@@ -158,18 +177,21 @@ var model = function(speaker_lambda, which_alternatives, which_distribution, whi
 			];}, results);
 }
 
-var prior_distribution_types = [
-	"normal",
-	"uniform",
-	"beta5_1",
-	"beta1_5",
-	"lognormal-1_0.3",
-	"lognormal1-x_-1_0.3",
-	"2-2x",
-	"2x"
-];
-var alphas = [1, 5];
-var costs_of_adjective = [1, 6];
+var prior_distribution_types = version == "toy" ? [
+		"normal",
+		"uniform",
+		"beta5_1",
+		"beta1_5",
+		"lognormal-1_0.3",
+		"lognormal1-x_-1_0.3",
+		"2-2x",
+		"2x"
+	] : [
+		"bas", "book", "bur", "cig", "eat", "edu", "girl",
+		"hair", "kid", "mov", "move", "poem", "shoe", "trav", "tv"
+	];
+var alphas = [1, 2, 3, 4, 5, 6, 7];
+var costs_of_adjective = [1, 2, 3, 4, 5, 6, 7];
 
 map(function(prior_distribution_type) {
 	var model_output = [[
@@ -201,7 +223,7 @@ map(function(prior_distribution_type) {
 		}, [], costs_of_adjective)
 	);
 
-	simpleCSV.writeCSV(model_output, "data/output/toy_priors/" + prior_distribution_type + '.csv');
+	simpleCSV.writeCSV(model_output, "data/output/" + version + "_priors/" + prior_distribution_type + '.csv');
 }, prior_distribution_types)
 
 // var model_output = [["value", "theta", "probability", "alternatives", "prior_distribution", "cost_of_adjective", "utterance", "speaker_lambda"]].concat(
