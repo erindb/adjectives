@@ -1,0 +1,360 @@
+//node --max-old-space-size=8192 ~/cocolab/webppl/webppl adjectives.wppl --require-js ./simpleCSV.js 
+
+var which_alternatives = "pos_neg_null";
+
+var seq = function(N) {
+	if (N == 0) {
+		return [];
+	} else {
+		return seq(N-1).concat([N]);
+	}
+}
+
+var priors = simpleCSV.readCSV("data/input/experiment_sliders_priors.csv");
+
+var get_prior_values = cache(function(value_type, resample_number) {
+	return map(
+		function(row) {return global.parseFloat(row[1]);},
+		filter(function(row) {
+			if (row.length < 5) {
+				return false;
+			} else {
+				return row[3] == value_type & resample_number == row[5].toString();
+			}
+		},priors.data)
+	);
+})
+
+var prior_distribution_types = [
+	//"bas", "book", "bur", "cig", "eat",
+	//"edu", "girl", "hair", "kid", "mov",
+	"move", "poem", "shoe", "trav", "tv"
+]
+
+var values = seq(15);
+
+var utterances = {
+	"pos_neg_null_exact": ["adjective", "", "~adjective", "exact"],
+	"pos_neg_null": ["adjective", "", "~adjective"],
+	"pos_null": ["adjective", ""],
+	"pos": ["adjective"]
+}
+
+var get_costs = cache(function(cost_value) {
+	return {
+		"adjective": cost_value
+		, "~adjective": cost_value
+		, "": 0 //null utterance (always true) is free
+		, "exact": Infinity //exact communication is infinitely costly
+	}
+})
+
+var get_utterance_prior = function(cost_value, alternatives_value) {
+	var costs = get_costs(cost_value);
+	var utts = utterances[alternatives_value];
+	var probs_of_utts = map(function(utt) {return Math.pow(Math.E, - costs[utt])}, utts);
+
+	return function() {
+		return utts[discrete(probs_of_utts)];
+	}
+}
+
+var meaning = function(utterance, theta, value, opposite_theta) {
+	if (utterance == "adjective") {
+		return value >= theta;
+	} else if (utterance == "~adjective") {
+		return value <= theta;
+	} else if (utterance == "") {
+		return true;
+	}
+}
+
+var getHist = function(dist) {
+	var probs = map(function(label) {return Math.exp(dist.score([], label))}, dist.support([]));
+	var pairList = zip(dist.support([]), probs);
+	return pairList;
+}
+
+var theta_prior = function() {
+	return uniformDraw(values);
+}
+
+var value_prior = function(prior_distribution_type, resample_number) {
+	var probabilities = get_prior_values(
+		prior_distribution_type,
+		resample_number
+	);
+	return values[discrete(probabilities)];
+};
+
+var literal_listener = cache(function(utterance, theta,
+	                                  prior_distribution_type,
+	                                  resample_number) {
+	return Enumerate(function() {
+		var value = value_prior(prior_distribution_type, resample_number);
+		factor(meaning(utterance, theta, value) ? 0 : -Infinity);
+		return value;
+	})
+})
+
+var speaker = cache(function(value,
+	                         theta,
+	                         prior_distribution_type,
+                             resample_number,
+                             speaker_lambda,
+                             which_cost) {
+	return Enumerate(function() {
+
+		var utterance_prior = get_utterance_prior(which_cost, which_alternatives);
+		var utterance = utterance_prior();
+		var literal_interpretation = literal_listener(
+			utterance,
+			theta,
+			prior_distribution_type,
+			resample_number
+		);
+		var score = literal_interpretation.score([], value);
+		factor(score * speaker_lambda);
+		return utterance;
+	})
+})
+
+var listener = cache(function(utterance,
+	                          prior_distribution_type,
+                              resample_number,
+                              speaker_lambda,
+                              which_cost) {
+	return Enumerate(function() {
+		var value = value_prior(prior_distribution_type, resample_number);
+		var theta = theta_prior();
+		var speaker_choice = speaker(
+			value,
+			theta,
+			prior_distribution_type,
+			resample_number,
+			speaker_lambda,
+			which_cost
+		);
+		factor(speaker_choice.score([], utterance));
+		return [value, theta];
+	})
+})
+
+var speaker_lambdas = [1,3,5,7];
+var costs_of_adjective = [1,3,5,7];
+var resample_numbers = seq(10);
+var header = [
+	"value",
+	"theta",
+	"probability",
+	"alternatives",
+	"prior_distribution",
+	"cost_of_adjective",
+	"speaker_lambda",
+	"resample_number"
+];
+
+var flatten_posterior = function(posterior,
+	                             prior_distribution_type,
+	                             speaker_lambda,
+	                             resample_number,
+	                             which_cost) {
+	return map(
+		function(post_pair) {
+			return [
+				post_pair[0][0], //value
+				post_pair[0][1], //theta
+				post_pair[1] //probability
+				, which_alternatives
+				, prior_distribution_type
+				, which_cost
+				, speaker_lambda
+				, resample_number
+			];
+		}, posterior
+	);
+};
+
+map(
+	function(prior_distribution_type) {
+		console.log("prior: " + prior_distribution_type);
+		map(function(speaker_lambda) {
+			console.log("speaker_lambda: " + speaker_lambda);
+			map(function(cost_of_adjective) {
+				console.log("cost_of_adjective: " + cost_of_adjective);
+				map(function(resample_number) {
+					console.log("resample_number: " + resample_number);
+					var model_output = flatten_posterior(
+						getHist(listener(
+							"adjective",
+							prior_distribution_type,
+							speaker_lambda,
+							resample_number,
+							cost_of_adjective
+						)),
+						prior_distribution_type,
+						speaker_lambda,
+						resample_number,
+						cost_of_adjective
+					);
+					csv_data = [header].concat(model_output);
+					var output_dir = "data/output/simulations_with_empirical_priors/";
+					var output_filename = prior_distribution_type + "_" +
+						speaker_lambda.toString() + "_" +
+						cost_of_adjective.toString() + "_" +
+						resample_number.toString() + ".csv";
+					var output_path =  output_dir + output_filename;
+					simpleCSV.writeCSV(csv_data, output_path);
+					return 1;
+				}, resample_numbers)
+				return 1;
+			}, costs_of_adjective)
+			return 1;
+		}, speaker_lambdas)
+		return 1;
+	},
+	prior_distribution_types
+);
+
+// map(
+// 	function(prior_distribution_type) {
+// 		console.log("starting file: " + prior_distribution_type + ".csv");
+// 		var model_output = reduce(
+// 			function(resample_number, output_so_far_resamples) {
+// 				console.log(resample_number);
+// 				return output_so_far_resamples.concat(
+// 					flatten_posterior(
+// 						getHist(listener(
+// 							"adjective",
+// 							prior_distribution_type,
+// 							1,
+// 							resample_number,
+// 							which_cost
+// 						)),
+// 						prior_distribution_type,
+// 						1,
+// 						resample_number,
+// 						which_cost
+// 					)
+// 				);
+// 			},
+// 			[],
+// 			resample_numbers
+// 		);
+// 		var csv_data = [header].concat(model_output);
+// 		var output_filename = "data/output/simulations_with_empirical_priors/" +
+// 			prior_distribution_type + ".csv";
+// 		simpleCSV.writeCSV(csv_data, output_filename);
+// 		return 1;
+// 	},
+// 	prior_distribution_types
+// );
+
+// map(function(prior_distribution_type) {
+// 	var model_output = reduce(function(speaker_lambda,
+// 		                               output_so_far_for_speaker_lambdas) {
+// 		return output_so_far_for_speaker_lambdas.concat(
+// 			reduce(function(resample_number, output_so_far_for_resamples) {
+// 				return output_so_far_for_resamples.concat(
+// 					flatten_posterior(
+// 						listener(
+// 							"adjective",
+// 							prior_distribution_type,
+// 							resample_number,
+// 							speaker_lambda
+// 						),
+// 						prior_distribution_type,
+// 						speaker_lambda
+// 					)
+// 				);
+// 			}, resample_numbers)
+// 		);
+// 	}, [], speaker_lambdas);	simpleCSV.writeCSV(
+// 		header.concat(model_output),
+// 		"data/output/model_with_empirical_priors/" +
+// 		prior_distribution_type + '.csv'
+// 	);
+// 	return 1;
+// }, prior_distribution_types)
+
+// 	var adjective_posterior = map(
+// 		function(post_pair) {return post_pair.concat(["adjective"]);},
+// 		getHist(Enumerate(function() {return listener("adjective")}))
+// 	);
+
+// 	//turn into a format that goes nicely into a csv file
+// 	return  map(function(post_pair) {return [
+// 				post_pair[0][0], //value
+// 				post_pair[0][1], //theta
+// 				post_pair[1] //probability
+// 				, which_alternatives
+// 				, which_distribution
+// 				, which_cost
+// 				, post_pair[2] //utterance
+// 				, speaker_lambda
+// 			];}, adjective_posterior);
+// }
+
+// var alphas = [1];
+// var costs_of_adjective = [1];
+// var resample_numbers = seq(100);
+
+// map(function(prior_distribution_type) {
+// 	var header = [
+// 		"value",
+// 		"theta",
+// 		"probability",
+// 		"alternatives",
+// 		"prior_distribution",
+// 		"cost_of_adjective",
+// 		"utterance",
+// 		"speaker_lambda"
+// 	];
+// 	var model_output = [header].concat(
+// 		reduce(function(cost_of_adjective, output_so_far_for_costs) {
+// 			return output_so_far_for_costs.concat(
+// 				reduce(
+// 					function(alpha, output_so_far_for_alphas) {
+// 						return output_so_far_for_alphas.concat(
+// 							reduce(
+// 								function(resample_number, output_so_far_for_resamples) {
+// 									console.log(resample_number)
+// 									return output_so_far_for_resamples.concat(
+// 										model(
+// 											alpha,
+// 											"pos_neg_null",
+// 											prior_distribution_type,
+// 											cost_of_adjective,
+// 											resample_number
+// 										)
+// 									);
+// 								}, [], resample_numbers
+// 							)
+// 						);
+// 					},
+// 					[],
+// 					alphas
+// 				)
+// 			)
+// 		}, [], costs_of_adjective)
+// 	);
+// 	simpleCSV.writeCSV(
+// 		model_output,
+// 		"data/output/model_with_empirical_priors/" +
+// 		prior_distribution_type + '.csv'
+// 	);
+// }, prior_distribution_types)
+
+// // var model_output = [["value", "theta", "probability", "alternatives", "prior_distribution", "cost_of_adjective", "utterance", "speaker_lambda"]].concat(
+// // 	reduce(
+// // 		function(prior_distribution_type, output_so_far) {
+// // 			return output_so_far.concat(model(1, "pos_neg_null", prior_distribution_type, 1, false));
+// // 		},
+// // 		[],
+// // 		prior_distribution_types
+// // 	)
+// // );
+
+// // simpleCSV.writeCSV(model_output, 'adjectives_output.csv');
+
+"finished!";

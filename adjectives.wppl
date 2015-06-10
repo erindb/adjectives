@@ -17,8 +17,8 @@
 // rationality parameter lambda
 // softmax?
 
-var version = "anthea";
-//var version = "toy";
+// var version = "anthea";
+var version = "toy";
 
 var priors = simpleCSV.readCSV("data/input/" + version + "_priors.csv");
 
@@ -190,8 +190,8 @@ var prior_distribution_types = version == "toy" ? [
 		"bas", "book", "bur", "cig", "eat", "edu", "girl",
 		"hair", "kid", "mov", "move", "poem", "shoe", "trav", "tv"
 	];
-var alphas = [1, 2, 3, 4, 5, 6, 7];
-var costs_of_adjective = [1, 2, 3, 4, 5, 6, 7];
+var alphas = [1, 5];
+var costs_of_adjective = [1, 6];
 
 map(function(prior_distribution_type) {
 	var model_output = [[

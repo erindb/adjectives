@@ -2,9 +2,9 @@
 title: "Adjectives"
 author: "erin"
 output:
-  pdf_document:
-    toc: true
-    highlight: zenburn
+pdf_document:
+toc: true
+highlight: zenburn
 ---
 
 ```{r, echo=FALSE}
@@ -14,15 +14,15 @@ library(plyr, quiet=T)
 
 marginalize = function(df) {
   value_df = ddply(df,
-             .(alternatives, prior_distribution, cost_of_adjective,
-               utterance, speaker_lambda, value),
-             summarize,
-             probability = sum(probability))
+                   .(alternatives, prior_distribution, cost_of_adjective,
+                     utterance, speaker_lambda, value),
+                   summarize,
+                   probability = sum(probability))
   theta_df = ddply(df,
-             .(alternatives, prior_distribution, cost_of_adjective,
-               utterance, speaker_lambda, theta),
-             summarize,
-             probability = sum(probability))
+                   .(alternatives, prior_distribution, cost_of_adjective,
+                     utterance, speaker_lambda, theta),
+                   summarize,
+                   probability = sum(probability))
   value_df$variable = "value"
   theta_df$variable = "theta"
   names(theta_df)[names(theta_df) == "theta"] = "value"
@@ -30,7 +30,7 @@ marginalize = function(df) {
   theta_df$variable = factor(theta_df$variable, levels=c("value", "theta"))
   new_df = rbind(value_df, theta_df)
   return(new_df)
-}
+  }
 ```
 
 # Math
@@ -54,17 +54,17 @@ $$P_{L1}(x, \theta | u) \propto P_{S}(u|x, \theta)P(x)P(\theta)$$
 ## Questions
 
 * What is the expected threshold for different distributions?
-    - Is there a constant percent of the prior probability mass that this expected threshold corresponds to (for a lot of contexts?)?
+- Is there a constant percent of the prior probability mass that this expected threshold corresponds to (for a lot of contexts?)?
 
 ## Dimensions of variation
 
 * What alternative utterances are possible?
-    * say nothing
-    * say adjective (e.g. "tall")
-    * negate adjective (e.g. "not tall")
-    * say opposite of adjective (e.g. "short")
-    * negate opposite of adjective (e.g. "not short")
-    * communicate exactly (all possible utterances that would communicate exactly the speaker's state of mind -- could be infinitely costly)
+* say nothing
+* say adjective (e.g. "tall")
+* negate adjective (e.g. "not tall")
+* say opposite of adjective (e.g. "short")
+* negate opposite of adjective (e.g. "not short")
+* communicate exactly (all possible utterances that would communicate exactly the speaker's state of mind -- could be infinitely costly)
 * What are the costs of the alternative utterances?
 * Different prior distributions along the adjective scale.
 * Is the threshold $\theta$ lifted all the way to the pragmatic listener? Or inferred by the literal listener?
@@ -79,14 +79,14 @@ I looked at several different prior distributions on the bounded interval [0,1]:
 * (bounded) normal: $\delta_{[0,1]} \cdot \mathcal{N}(0.5, 0.1)$
 * uniform: $\mathcal{U}(0, 1)$
 * betas:
-    * $\mbox{Beta}(1, 5)$
-    * $\mbox{Beta}(5, 1)$
+* $\mbox{Beta}(1, 5)$
+* $\mbox{Beta}(5, 1)$
 * (bounded) log-normal:
-    * $\delta_{[0,1]} \cdot \ln \mathcal{N}(-1, 0.3)$
-    * reversed: $\delta_{[0,1]} \cdot \ln \mathcal{N}(1-x ; -1, 0.3)$
+* $\delta_{[0,1]} \cdot \ln \mathcal{N}(-1, 0.3)$
+* reversed: $\delta_{[0,1]} \cdot \ln \mathcal{N}(1-x ; -1, 0.3)$
 * linear:
-    * $2-2x$
-    * $2x$
+* $2-2x$
+* $2x$
 
 These distributions were discretized for the simulations.
 
@@ -101,7 +101,7 @@ dists = list(
   , list("lognormal(1-x, -1, 0.3)", dlnorm(1-x, meanlog=-1, sdlog=0.3))
   , list("2-2x", 2-2*x)
   , list("2x", 2*x)
-)
+  )
 d = data.frame(x=c(rep(x, length(dists))),
                y=unlist(sapply(dists, function(lst) {return(lst[2])})),
                dist=c(sapply(dists, function(lst) {return(rep(lst[[1]], length(x)))})))
@@ -151,28 +151,28 @@ Here's a sketch of a scalar adjectives model in WebPPL.
 
 ```
 var literal_listener = cache(function(utterance, theta) {
-	Enumerate(function() {
-		var value = value_prior();
-		factor(meaning(utterance, theta, value) ? 0 : -Infinity);
-		return value;
-	})
+Enumerate(function() {
+var value = value_prior();
+factor(meaning(utterance, theta, value) ? 0 : -Infinity);
+return value;
+})
 })
 
 var speaker = cache(function(value, theta) {
-	Enumerate(function() {
-		var utterance = utterance_prior();
-		var literal_interpretation = literal_listener(utterance, theta);
-		factor(literal_interpretation.score([], value));
-		return utterance;
-	})
+Enumerate(function() {
+var utterance = utterance_prior();
+var literal_interpretation = literal_listener(utterance, theta);
+factor(literal_interpretation.score([], value));
+return utterance;
+})
 })
 
 var listener = function(utterance) {
-	var value = value_prior();
-	var theta = theta_prior();
-	var speaker_choice = speaker(value, theta);
-	factor(speaker_choice.score([], utterance));
-	return [value, theta];
+var value = value_prior();
+var theta = theta_prior();
+var speaker_choice = speaker(value, theta);
+factor(speaker_choice.score([], utterance));
+return [value, theta];
 }
 ```
 
@@ -193,18 +193,18 @@ webppl_output = rbind(
   , read.table("data/output/toy_priors/lognormal-1_0.3.csv", sep=",", header=T)
   , read.table("data/output/toy_priors/2x.csv", sep=",", header=T)
   , read.table("data/output/toy_priors/2-2x.csv", sep=",", header=T)
-)
+  )
 webppl_output$prior_distribution = factor(webppl_output$prior_distribution,
-                                            levels=c(
-                                              "2-2x",
-                                              "2x",
-                                              "beta0.1_0.1",
-                                              "beta1_5",
-                                              "beta5_1",
-                                              "lognormal-1_0.3",
-                                              "lognormal1-x_-1_0.3",
-                                              "normal",
-                                              "uniform"
+                                          levels=c(
+                                            "2-2x",
+                                            "2x",
+                                            "beta0.1_0.1",
+                                            "beta1_5",
+                                            "beta5_1",
+                                            "lognormal-1_0.3",
+                                            "lognormal1-x_-1_0.3",
+                                            "normal",
+                                            "uniform"
                                             ), labels=c(
                                               "2-2x",
                                               "2x",
@@ -215,7 +215,7 @@ webppl_output$prior_distribution = factor(webppl_output$prior_distribution,
                                               "lognormal(1-x, -1, 0.3)",
                                               "normal",
                                               "uniform"
-                                            ))
+                                              ))
 webppl_output$probability = as.numeric(as.character(webppl_output$probability))
 
 marginalized_output = marginalize(webppl_output)
@@ -226,6 +226,15 @@ theta_output$group = "prior"
 theta_output$group[theta_output$variable == "theta"] = "posterior_theta"
 
 p = ggplot(theta_output, aes(x=value, y=probability, linetype=group,
+                             colour=prior_distribution)) +
+  geom_line(lwd=0.7) +
+  facet_grid(cost_of_adjective ~ speaker_lambda, scale="free") +
+  theme_bw(10) +
+  theme(panel.grid=element_blank()) +
+  ggtitle("WebPPL output for theta posterior with various parameters")
+print(p)
+
+p = ggplot(subset(webppl_output, aes(x=value, y=probability, linetype=group,
                              colour=prior_distribution)) +
   geom_line(lwd=0.7) +
   facet_grid(cost_of_adjective ~ speaker_lambda, scale="free") +
@@ -248,17 +257,22 @@ expected_thetas = ddply(subset(theta_output, variable == "theta" &
                         summarize,
                         expected = sum( value * probability)) #get mode later
 actual_priors = subset(marginalized_output, utterance == "prior" &
-                  cost_of_adjective == 1 &
-                  speaker_lambda == 1 &
-                  variable == "value")
+                          cost_of_adjective == best_cost_of_adjective &
+                          speaker_lambda == best_speaker_lambda &
+                         variable == "value")
 actual_priors = actual_priors[,c("prior_distribution", "value", "probability")]
 expected_thetas$percentile = sapply(1:nrow(expected_thetas), function(i) {
   prior_dist = as.character(expected_thetas$prior_distribution)[[i]]
   expected = expected_thetas$expected[[i]]
-  subd = subset(actual_priors, prior_distribution == prior_dist & value <= expected)
+  subd = subset(actual_priors, prior_distribution == prior_dist & value < expected)
   return(sum(subd$probability))
-})
+  })
 print(expected_thetas)
+
+# p = ggplot(actual_priors, aes(x=value, y=probability, colour=prior_distribution)) +
+#   geom_line() +
+#   facet_wrap(~ prior_distribution)
+# print(p)
 ```
 
 These values are not all the same.
@@ -278,16 +292,16 @@ for (file in files) {
   webppl_anthea_output = rbind(
     webppl_anthea_output,
     read.table(paste("data/output/anthea_priors/", file, sep=""), sep=",", header=T)
-  )
-}
+    )
+  }
 marginalized_anthea_output = marginalize(webppl_anthea_output)
 anthea_humans$prior_distribution = anthea_humans$item
 
 model = subset(marginalized_anthea_output, !(prior_distribution %in% c(
-#   "cig", "move"
+  #   "cig", "move"
   )))
 human = subset(anthea_humans, !(prior_distribution %in% c(
-#   "cig", "move"
+  #   "cig", "move"
   )))
 
 p = ggplot(data=subset(model, utterance == "adjective" & variable == "value"),
@@ -299,6 +313,16 @@ p = ggplot(data=subset(model, utterance == "adjective" & variable == "value"),
   theme_bw(10) +
   theme(panel.grid=element_blank())
 print(p)
+
+# p = ggplot(data=subset(model,
+#                        utterance == "adjective" & cost_of_adjective == 1 & speaker_lambda == 1),
+#            aes(x=value, y=probability, colour=variable)) +
+#   geom_line() +
+#   facet_wrap(~ prior_distribution) +
+#   ggtitle("Posterior distributions for model with lambda 1 cost 1") +
+#   theme_bw(10) +
+#   theme(panel.grid=element_blank())
+# print(p)
 ```
 
 ```{r, echo=F}
@@ -311,7 +335,7 @@ model_klds = ddply(.data=subset(model, utterance == "adjective" & variable == "v
   newdf$value = NULL
   newdf$probability = NULL
   return(newdf)
-})
+  })
 
 ### for each parameter combo, get average KLD across distributions
 average_klds = ddply(.data=model_klds, .(speaker_lambda, cost_of_adjective), summarize, kld = mean(kld))
@@ -325,8 +349,8 @@ The best fit parameters (i.e. with the lowest average KL divergence) are speaker
 
 ```{r, echo=F, fig.width=8.5, fig.height=7}
 model_vs_human = subset(model, utterance == "adjective" & variable == "value" &
-                         cost_of_adjective == best_cost_of_adjective &
-                         speaker_lambda == best_speaker_lambda)[, c("prior_distribution", "value", "probability")]
+                          cost_of_adjective == best_cost_of_adjective &
+                          speaker_lambda == best_speaker_lambda)[, c("prior_distribution", "value", "probability")]
 model_vs_human$model_or_human = "model"
 human_posterior = subset(human, condition == "many")
 model_vs_human = rbind(model_vs_human, data.frame(
@@ -334,7 +358,7 @@ model_vs_human = rbind(model_vs_human, data.frame(
   value = human_posterior$bin,
   probability = human_posterior$sliderNorm,
   model_or_human = rep("human", nrow(human_posterior))
-))
+  ))
 
 model_vs_human$model_or_human = factor(model_vs_human$model_or_human,
                                        levels=c("model", "human"))
@@ -349,22 +373,22 @@ print(p)
 
 ```{r, echo=F}
 expected_thetas = ddply(subset(model, utterance == "adjective" & variable == "theta" &
-                         cost_of_adjective == best_cost_of_adjective &
-                         speaker_lambda == best_speaker_lambda),
+                                 cost_of_adjective == best_cost_of_adjective &
+                                 speaker_lambda == best_speaker_lambda),
                         .(prior_distribution),
                         summarize,
                         expected = sum( value * probability)) #get mode later
 actual_priors = subset(marginalized_anthea_output, utterance == "prior" &
-                  cost_of_adjective == 1 &
-                  speaker_lambda == 1 &
-                  variable == "value")
+                         cost_of_adjective == 1 &
+                         speaker_lambda == 1 &
+                         variable == "value")
 actual_priors = actual_priors[,c("prior_distribution", "value", "probability")]
 expected_thetas$percentile = sapply(1:nrow(expected_thetas), function(i) {
   prior_dist = as.character(expected_thetas$prior_distribution)[[i]]
   expected = expected_thetas$expected[[i]]
   subd = subset(actual_priors, prior_distribution == prior_dist & value <= expected)
   return(sum(subd$probability))
-})
+  })
 
 best_KLs = subset(model_klds, cost_of_adjective==best_cost_of_adjective & speaker_lambda == best_speaker_lambda)
 stopifnot(best_KLs$prior_distribution == expected_thetas$prior_distribution)
@@ -379,4 +403,68 @@ print(expected_thetas)
 #   xlab("KL divergence between Model and Empirical 'Many' Posterior") +
 #   ylab("Model's Expected Theta as a Percentile of Empirical Prior")
 # with(expected_thetas, cor.test(KL, percentile))
+```
+
+```{r, echo=F}
+erin = expected_thetas$expected
+anthea = c(8.87, 6.39, 3.31, 6.96, 5.61, 7.43, 4.42, 3.44, 3.53, 4.06, 8.57, 5.55, 4.82, 6.22, 6.20)
+
+compare = data.frame(
+  erin = erin,
+  anthea = anthea,
+  item = expected_thetas$prior_distribution
+  )
+compare$item = revalue(compare$item, c("bas"="Basketball", "book"="Book pages", "bur"="Burger", "cig"="Cigarettes", "eat"="Time spent eating", "edu" = "Time in education","girl"="Girlfriends", "hair" = "Visits to hairdresser's", "kid" = "Children", "mov" = "Movies in cinema", "move" = "Age of moving out", "poem"="Poem lines", "shoe"="Pairs of shoes", "trav"= "Commuting time", "tv"= "Hours watching TV"))
+p = ggplot(compare, aes(x=erin, y=anthea, colour=item)) +
+  geom_point(size=3) +
+  geom_text(aes(label=item), hjust=-0.1) +
+  xlab("Erin thresholds (intervals)") +
+  ylab("Anthea thresholds (intervals)") +
+  xlim(4, 6.3)
+print(p)
+cor.test(erin, anthea)
+
+anthea_percentiles = subset(read.csv("thetaintervals.csv", header=T), quantifier == "many")
+compare_percentile = data.frame(
+  erin = expected_thetas$percentile,
+  anthea_low = anthea_percentiles$HDIlow,
+  anthea_high = anthea_percentiles$HDIhigh,
+  item = factor(as.character(expected_thetas$prior_distribution))
+)
+ggplot(compare_percentile, aes(x=erin, y=anthea_low, colour=item)) +
+  geom_errorbar(aes(x=erin, ymin=anthea_low, ymax=anthea_high)) +
+  geom_text(aes(label=item), hjust=-0.1)
+
+# compare_percentile2 = data.frame(
+#   theta = c(compare_percentile$erin, compare_percentile$anthea_low, compare_percentile$anthea_high),
+#   version = c(rep("erin", 15), rep("anthea", 30)),
+#   item = c(rep(compare_percentile$item, 3))
+#   )
+# p = ggplot(compare_percentile2, aes(x=item, y=theta, colour=item)) +
+#   geom_point()
+# print(p)
+
+# bad_ones = c("move", "cig", "bas", "edu")
+bad_ones = c()
+p = ggplot(subset(compare_percentile, !(item %in% bad_ones)),
+           aes(x=item, ymin=anthea_low, ymax=anthea_high, y=2, colour=item)) +
+  geom_linerange(size=1.5) +
+  geom_point(aes(x=item, y=erin, size=7)) +
+  ylim(0, 1)
+print(p)
+
+# anthea_percentiles = subset(read.csv("thetaintervals.csv", header=T), quantifier == "many")
+# compare_percentile = data.frame(
+#   erin = c(expected_thetas$percentile,expected_thetas$percentile),
+#   anthea = c(anthea_percentiles$HDIlow, anthea_percentiles$HDIhigh),
+#   lowhigh = c(rep("low", 15), rep("high", 15)),
+#   item = c(as.character(expected_thetas$prior_distribution),
+#            as.character(expected_thetas$prior_distribution))
+# )
+# p = ggplot(compare_percentile, aes(x=erin, y=anthea, colour=factor(item), group=lowhigh)) +
+#   geom_errorbar(x=erin, y) +
+#   geom_text(aes(label=item), hjust=-0.1) +
+#   xlab("Erin thresholds (percentiles)") +
+#   ylab("Anthea thresholds (percentiles)")
+# print(p)
 ```
