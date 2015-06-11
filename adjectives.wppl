@@ -1,0 +1,242 @@
+// webppl adjectives.wppl --require-js ./simpleCSV.js
+
+var alternatives = "adjnull";
+
+var items = [
+	"bas", "book", "bur",
+	"cig", "eat", "edu",
+	"girl", "hair", "kid",
+	"mov", "move", "poem",
+	"shoe", "trav", "tv"
+];
+
+var get_parameters = function(item, prior_or_posterior) {
+	var csv_data = simpleCSV.readCSV("data/output/anthea_experiments.csv").data;
+	var specific_data = filter(
+		function(condition_data) {
+			var is_item = item == condition_data[2];
+			var is_prior_or_posterior = prior_or_posterior == condition_data[1];
+			return is_item && is_prior_or_posterior;
+		}, csv_data.slice(1, csv_data.length - 1)
+	);
+	return {
+		"values": map(function(condition_data) {
+			return global.parseFloat(condition_data[4]);
+		}, specific_data),
+		"probabilities": map(function(condition_data) {
+			return global.parseFloat(condition_data[5]);
+		}, specific_data)
+	}
+}
+
+var get_dist = cache(function(item, prior_or_posterior) {
+	var parameters = get_parameters(item, prior_or_posterior);
+	var values = parameters.values;
+	var probabilities = parameters.probabilities;
+	return function() {
+		return values[discrete(probabilities)];
+	}
+})
+
+var get_theta_prior = cache(function() {
+	//all items and prior/posterior have the same support, so wlog, use "bas" and "prior"
+	var values = get_parameters("bas", "prior").values;
+	return function() {
+		return uniformDraw(values);
+	};
+})
+
+var is_true = cache(function(utterance, value, theta) {
+	if (utterance == "adj") {
+		return value >= theta;
+	} else if (utterance == "null") {
+		return true;
+	} else {
+		console.log("err 55");
+	}
+})
+
+var literal_listener = cache(function(utterance, theta, item) {
+	return Enumerate(
+		function() {
+			var prior = get_dist(item, "prior");
+			var value = prior();
+			factor(is_true(utterance, value, theta) ? 0 : -Infinity)
+			return value;
+		}
+	)
+})
+
+var utterance_prior = cache(function(cost) {
+	return Enumerate(function() {
+		var utterances = ["adj", "null"];
+		var costs = [cost, 0];
+		var probabilities = map(function(c) {return Math.exp(- c);}, costs);
+		return utterances[discrete(probabilities)];
+	});
+})
+
+var speaker = cache(function(value, theta, item, cost, lambda) {
+	return Enumerate(
+		function() {
+			var utterance = sample(utterance_prior(cost));
+			var literal_interpretation = literal_listener(utterance, theta, item);
+			var score = literal_interpretation.score([], value);
+			factor(score * lambda);
+			return utterance;
+		}
+	)
+})
+
+var listener = function(utterance, item, cost, lambda) {
+	return Enumerate(
+		function() {
+			var prior = get_dist(item, "prior");
+			var theta_prior = get_theta_prior(item);
+			var value = prior();
+			var theta = theta_prior();
+			var score = speaker(value, theta, item, cost, lambda).score([], utterance);
+			factor(score);
+			return [value, theta, item];
+		}
+	)
+}
+
+var get_erp_posterior = function(erp) {
+	return map(function(x) {
+		return [x, global.Math.exp(erp.score([], x))];
+	}, erp.support());
+}
+
+var dKL = function(erp, truePosterior) {
+	var marginalERP = Enumerate(function() {
+		return sample(erp)[0];
+	});
+	if (marginalERP.support([]).length !== truePosterior.length) {
+		console.error("Incomplete support!")
+		return -Infinity
+	}
+	return mapReduce1(plus,
+		function(s) {
+			var p = s[1];
+			if (p === 0) return 0;
+			var q = marginalERP.score([], s[0]);
+			return p * (Math.log(p) - q)
+		},
+		truePosterior
+	)
+}
+
+// var record = function(modelERP, item, cost, lambda) {
+// 	var dir = "data/output/model_results_for_antheas_experiments/";
+// 	var file = alternatives + "_item" + item + "_cost" + cost + "_lambda" + lambda + ".csv";
+// 	console.log("writing file " + file);
+// 	var path = dir + file;
+// 	var model_output = {
+// 		"data": map(function(result) {
+// 			var value = result[0];
+// 			var theta = result[1];
+// 			var score = modelERP.score([], result);
+// 			var probability = Math.exp(score);
+// 			return [item, cost, lambda, value, theta, score, probability];
+// 		}, modelERP.support())
+// 	}
+// 	simpleCSV.writeCSV(model_output, path);
+// 	return 1;
+// }
+
+var flatten_for_csv = function(modelERP, cost, lambda, kl) {
+	return map(function(result) {
+		var value = result[0];
+		var theta = result[1];
+		var item = result[2];
+		var score = modelERP.score([], result);
+		var probability = Math.exp(score);
+		return [item, cost, lambda, value, theta, score, probability, kl];
+	}, modelERP.support());
+}
+
+var costs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+];
+var lambdas = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+];
+
+var results = [];
+var results_index = 0;
+
+var model = Enumerate(function() {
+	//sample parameters
+	var cost = uniformDraw(costs);
+	var lambda = uniformDraw(lambdas);
+
+	//run model with those parameters on all items
+	var modelERPs = map(function(item) {
+		var modelERP = listener("adj", item, cost, lambda);
+		return modelERP;
+	}, items);
+
+	//compare model results for all items to actual posteriors
+	var exptPosteriors = map(function(item) {
+		var exptERP = Enumerate(get_dist(item, "posterior"));
+		return get_erp_posterior(exptERP);
+	}, items);
+	var dKLs = map2(dKL, modelERPs, exptPosteriors);
+	var average_dKL = sum(dKLs)/dKLs.length;
+
+	//record model output
+	var model_output = [].concat.apply([], map2(function(erp, kl) {
+		return flatten_for_csv(erp, cost, lambda, kl);
+	}, modelERPs, dKLs));
+	results[results_index] = model_output;
+	results_index += 1;
+
+	factor(- average_dKL);
+
+	return [cost, lambda];
+})
+
+var model_output = [].concat.apply([], results);
+simpleCSV.writeCSV(model_output, "data/output/model_results_for_antheas_experiments.csv");
+
+var parameter_data = {
+	"data": map(function(result) {
+		var cost = result[0];
+		var lambda = result[1];
+		var score = model.score([], result);
+		var probability = Math.exp(score);
+		return [cost, lambda, score, probability];
+	}, model.support())
+}
+simpleCSV.writeCSV(parameter_data, "data/output/model_parameters_for_antheas_experiments.csv");
+
+
+// map(function(cost) {
+// 	map(function(lambda) {
+// 		map(function(item) {
+// 			console.log("running " + item + ": " + alternatives + "_cost" + cost + "_lambda" + lambda);
+// 			var listenerERP = listener("adj", item, cost, lambda);
+// 			console.log("finished running " + item + ": " + alternatives + "_cost" + cost + "_lambda" + lambda);
+// 			var model_output = {
+// 				"data" : map(function(pair) {
+// 					var value = pair[0];
+// 					var theta = pair[1];
+// 					var score = listenerERP.score([], pair);
+// 					var probability = Math.exp(score);
+// 					return [item, cost, lambda, value, theta, score, probability];
+// 				}, listenerERP.support())
+// 			}
+// 			simpleCSV.writeCSV(model_output, "model_output/" + item + "_" + alternatives + "_cost" + cost + "_lambda" + lambda + ".csv");
+// 			return 1;
+// 		}, items);
+// 		return 1;
+// 	}, lambdas);
+// 	return 1;
+// }, costs)
+
+// get_parameters("bas", "prior");
+// get_dist("bas", "prior")();
+// get_theta_prior()();
+
+// listener("adj", "bas", 1, 1);
+
+// model;

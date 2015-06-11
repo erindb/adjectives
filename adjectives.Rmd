@@ -1,0 +1,164 @@
+---
+title: "Adjectives"
+author: "summary by Erin Bennett"
+date: "2015 June 10"
+output:
+  pdf_document:
+    toc: true
+    highlight: zenburn
+    toc_depth: 4
+---
+
+# Adjectives model (and threshold variable models in general)
+
+```{r echo=F, quiet=T}
+char = function(v) { return(as.character(v)) }
+num = function(v) { return(as.numeric(as.character(v))) }
+library(rjson)
+library(plyr)
+library(ggplot2)
+source("~/opt/r_helper_scripts/bootsSummary.R")
+new_theme = theme_bw(10) +
+  theme(panel.grid=element_blank())
+theme_set(new_theme)
+```
+
+## Inferred threshold (scalar adjectives) model
+
+Literal Listener's probability distribution over the values $X$ are is prior, conditioned on the utterance being true and renormalized.
+
+$$P_{L0}(x | u, \theta) \propto \delta_{u \mbox{ is true}} \cdot P(x)$$
+
+Speaker's utility is the negative cost and the log probability of the actual state of the world under the Literal Listener's posterior. This means that the more surprised the Literal Listener would be to hear the true state of the world after already hearing the utterance, the less good the utterance would be.
+
+$$\mathbb{U}_{S}(u | x, \theta) = log(P_{L0}(x|u, \theta)) - cost(u)$$
+
+The speaker then chooses an utterance by soft-maximizing their utility funciton.
+
+$$P_{S}(u|x, \theta) \propto e^{\lambda \mathbb{U}_{S}(u|x, \theta)}$$
+
+The pragmatic listener infers both the threshold $\theta$ and the value $x$ conditioning on the speaker choosing the given utterance.
+
+$$P_{L1}(x, \theta | u) \propto P_{S}(u|x, \theta)P(x)P(\theta)$$
+
+## Anthea's experiments
+
+```{r echo=F}
+anthea = subset(reshape(read.csv("data/input/sliderMeans3.csv", as.is=T),
+                        varying=paste("sliderNorm", 1:15, sep=""), direction="long",
+                        timevar="bin", idvar=c("condition", "item"), times=1:15,
+                        v.names="sliderNorm"), condition %in% c("many", "none"))
+anthea$condition[anthea$condition == "many"] = "posterior"
+anthea$condition[anthea$condition == "none"] = "prior"
+
+write.csv(anthea, "data/output/anthea_experiments.csv", row.names=F)
+```
+
+Anthea ran experiments eliciting priors and posteriors (after hearing "many") and found the following results.
+
+```{r echo=F, fig.width=8.5, fig.height=5}
+ggplot(anthea, aes(x=bin, y=sliderNorm, colour=condition)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~ item)
+```
+
+### Adjectives model simulations
+
+```{r echo=F}
+model = read.csv("data/output/model_results_for_antheas_experiments.csv", header=F,
+                 col.names=c("item", "cost", "lambda", "value", "theta", "score", "probability", "dKL"))
+parameter = read.csv("data/output/model_parameters_for_antheas_experiments.csv", header=F,
+                     col.names=c("cost", "lambda", "score", "probability"))
+best_params = parameter[parameter$probability == max(parameter$probability),]
+best_cost = best_params$cost
+best_lambda = best_params$lambda
+best_model = subset(model, cost == best_cost & lambda == best_lambda)
+```
+
+We fit cost $C$ and speaker rationality parameter $\lambda$ to experiment posterior data. The best parameters were $C$=`r best_cost` and $\lambda$=`r best_lambda`.
+
+```{r echo=F, fig.width=5, fig.height=3}
+ggplot(parameter, aes(ordered(cost), ordered(lambda))) +
+  geom_tile(aes(fill=probability), colour="white") +
+  scale_fill_gradient(low="white", high="steelblue")
+```
+
+We can graph results of the model with these parameters against the data from Anthea's experiments. The average KL divergence for these parameters accross all items is `r mean(best_model$dKL)`.
+
+```{r echo=F, fig.width=8.5, fig.height=5}
+# marginal_model = rbind(
+#   ddply(best_model, .(item, value), summarise, probability=sum(probability), condition="model")[,c("item", "probability", "condition")],
+#   ddply(best_model, .(item, theta), summarise, probability=sum(probability), condition="model")[,c("item", "probability", "condition")]
+# )
+marginal_model = ddply(best_model, .(item, value), summarise, probability=sum(probability), condition="model")
+names(marginal_model)[names(marginal_model) == "value"] = "bin"
+expt = anthea[,c("item", "bin", "condition", "sliderNorm")]
+expt$condition[expt$condition == "posterior"] = "expt"
+names(expt)[names(expt) == "sliderNorm"] = "probability"
+modelvexpt = rbind(marginal_model, expt)
+ggplot(modelvexpt, aes(x=bin, y=probability, colour=condition)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~ item) +
+  scale_colour_manual(values=c("chartreuse3", "steelblue", "gray"))
+```
+
+The model marginal distributions for the value $X$ and the threshold $\theta$ are shown below.
+
+```{r echo=F, fig.width=8.5, fig.height=5}
+marginal_model = rbind(
+  ddply(best_model, .(item, value), summarise, probability=sum(probability), variable="value")[,c("item", "probability", "variable")],
+  ddply(best_model, .(item, theta), summarise, probability=sum(probability), "model", variable="theta")[,c("item", "probability", "variable")]
+)
+marginal_model$bin = c(rep(1:15, 30))
+prior = subset(expt, condition == "prior")
+names(prior)[names(prior)=="condition"] = "variable"
+marginal_model = rbind(marginal_model, prior)
+
+marginal_model = ddply(marginal_model, .drop=F, .(item), function(df) {
+  theta_df = subset(df, variable == "theta")
+  df$expected_theta = sum(theta_df$probability * theta_df$bin)
+  return(df)
+})
+
+ggplot(marginal_model, aes(x=bin, y=probability, colour=variable)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~ item) +
+  geom_vline(aes(xintercept=expected_theta), colour="violetred1") +
+  scale_colour_manual(values=c("gray", "violetred", "steelblue"))
+
+expected_thetas = ddply(marginal_model, .(item), function(df) {
+  expected_theta = df$expected_theta[[1]]
+  item = df$item[[1]]
+  
+  lower_bound_percentile = sum(df$probability[df$bin <= expected_theta & df$variable == "prior"])
+  upper_bound_percentile = sum(df$probability[df$bin < (expected_theta + 1) & df$variable == "prior"])
+  percentile_between_bins = upper_bound_percentile - lower_bound_percentile
+  theta_above_bin = expected_theta - floor(expected_theta)
+  theta_as_percentile = lower_bound_percentile + (percentile_between_bins * theta_above_bin)
+  
+  new_df = data.frame(
+    theta_as_bin = expected_theta,
+    item = item,
+    theta_as_percentile = theta_as_percentile
+  )
+})
+```
+
+The thresholds vary depending on the distribution. The lowest is at about the `r round(min(expected_thetas$theta_as_percentile)*100)`th percentile of the prior (for *`r expected_thetas$item[expected_thetas$theta_as_percentile == min(expected_thetas$theta_as_percentile)]`*), and the highest is at about the `r round(max(expected_thetas$theta_as_percentile)*100)`th percentile of the prior (for *`r expected_thetas$item[expected_thetas$theta_as_percentile == max(expected_thetas$theta_as_percentile)]`*).
+
+```{r echo=F}
+print(expected_thetas)
+```
+
+#### Inferred thresholds
+
+## Other prior distributions to consider
+
+### Priors
+
+### Model simulations
+
+#### Inferred thresholds
