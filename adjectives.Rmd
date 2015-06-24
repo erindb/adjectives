@@ -153,7 +153,37 @@ The thresholds vary depending on the distribution. The lowest is at about the `r
 print(expected_thetas)
 ```
 
-#### Inferred thresholds
+We can plot our thetas against Anthea's theta ranges. (cocolab model = dots, Anthea's model = lines)
+
+```{r echo=F}
+thetaintervals = subset(read.csv("data/input/thetaintervals.csv"), quantifier == "many")[,c("X", "item", "HDIlow", "HDIhigh")]
+thetaintervals$model = "anthea"
+cocolab_thetas = data.frame(
+  theta=expected_thetas$theta_as_percentile,
+  item=expected_thetas$item,
+  HDIlow=expected_thetas$theta_as_percentile,
+  HDIhigh=expected_thetas$theta_as_percentile+0.01,
+  model="cocolab"
+)
+# thetaintervals = rbind(thetaintervals, cocolab_thetas)
+thetaintervals_plot = ggplot(data = thetaintervals,
+                             aes(x = item, ymin = HDIlow, ymax=HDIhigh, y = 2, 
+                                 colour = factor(item))) +
+  geom_linerange(size = 1.5)+
+  scale_y_continuous(name="HDI of indiviual thresholds", limits=c(0,1))+
+  scale_x_discrete(name="Items", labels = as.factor(thetaintervals$item))+
+#   facet_wrap(~model)+
+  geom_point(data=cocolab_thetas, aes(x=item, y=theta), size=5) +
+  scale_color_discrete(name="Item",
+                       breaks= as.factor(thetaintervals$item),
+                       labels=c("Basketball", "Book pages", "Burger", "Cigarettes",
+                                "Time spent eating", "Time in education",
+                                "Girlfriends", "Visits to hairdresser's", "Children",
+                                "Movies in cinema", "Age of moving out",
+                                "Poem lines", "Pairs of shoes", "Commuting time",
+                                "Hours watching TV"))
+print(thetaintervals_plot)
+```
 
 ## Other prior distributions to consider
 
